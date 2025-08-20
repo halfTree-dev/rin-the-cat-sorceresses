@@ -1,12 +1,13 @@
+let playColdDown = 0;
 const audioCtx = window.AudioContext ? new window.AudioContext() : (window.webkitAudioContext ? new window.webkitAudioContext() : null);
 function playSfx(name) {
-    if (!audioCtx) return;
+    if (!audioCtx || (playColdDown > 1e-9 && name !== 'alarm')) return;
     let t = audioCtx.currentTime;
-    if (name === 'alarm' || name === 'tip') {
+    if (name === 'alarm' || name === 'tip' || name === 'hit') {
         for (let i = 0; i < (name === 'alarm' ? 4 : 1); i++) {
             let o = audioCtx.createOscillator(), g = audioCtx.createGain();
             o.type = 'sine';
-            o.frequency.value = 1200;
+            o.frequency.value = (name === 'hit' ? 450 : 1200);
             let real = new Float32Array([0, 1, 0.4, 0.2, 0.1]);
             let imag = new Float32Array(real.length);
             let bell = audioCtx.createPeriodicWave(real, imag);
@@ -30,28 +31,14 @@ function playSfx(name) {
         g.gain.setValueAtTime(0.22, t);
         g.gain.linearRampToValueAtTime(0, t + 0.07);
         s.stop(t + 0.14);
-    } else if (name === 'hit') {
-        let o = audioCtx.createOscillator(), g = audioCtx.createGain();
-        o.type = 'sine';
-        o.frequency.value = 320;
-        let real = new Float32Array([0, 1, 0.7, 0.3, 0.1]);
-        let imag = new Float32Array(real.length);
-        let impact = audioCtx.createPeriodicWave(real, imag);
-        o.setPeriodicWave(impact);
-        o.connect(g).connect(audioCtx.destination);
-        g.gain.value = 0.19;
-        o.start(t);
-        g.gain.setValueAtTime(0.19, t);
-        g.gain.linearRampToValueAtTime(0, t + 0.09);
-        o.frequency.linearRampToValueAtTime(120, t + 0.09);
-        o.stop(t + 0.1);
     }
+    playColdDown = 0.05;
 }
 
 const TILE_WIDTH = 32;
 const TILE_HEIGHT = 32;
 const PLAYER_WIDTH = 26;
-const PLAYER_HEIGHT = 42;
+const PLAYER_HEIGHT = 40;
 const BULLET_SIZE = 14;
 const BULLET_OFFSET_Y = -21;
 const HIT_RADIUS = 14;
@@ -59,7 +46,7 @@ const CAT_WIDTH = 26;
 const CAT_HEIGHT = 22;
 const MAP_SIZE = 256;
 
-const map = Array.from({length:MAP_SIZE},()=>Array.from({length:MAP_SIZE},()=>""));
+let map = Array.from({length:MAP_SIZE},()=>Array.from({length:MAP_SIZE},()=>""));
 const BLOCKS = 8;
 const BLOCK_SIZE = 32;
 
@@ -67,6 +54,7 @@ let gameState = 0;
 let stage = 0;
 let currFrame = 0;
 let score = 0;
+let continued = false;
 
 let offsetX = 0, offsetY = 0;
 
@@ -114,7 +102,7 @@ const imgDict = {};
 });
 
 function restartMap() {
-    playerX = 512; playerY = 512;
+    playerX = 512; playerY = 512; hitPoints = 3; shieldPoints = 3; enemies = []; map = Array.from({length:MAP_SIZE},()=>Array.from({length:MAP_SIZE},()=>"")); catPower = catPowerMax; moveFlags = [];
     let currRoomX = 0, currRoomY = 0;
     let moveRightFlag = 0;
     while (currRoomX < BLOCKS && currRoomY < BLOCKS) {
@@ -187,6 +175,8 @@ canvas.addEventListener('mouseup', e => {
 });
 
 function update() {
+    playColdDown = Math.max(0, playColdDown - 1 / 60);
+    if (hitPoints <= 0) { return; }
     playerCatStatus = dashTime > 0;
     if (!playerCatStatus) { catPower += catPowerRegen; }
     let shiftX, shiftY;
@@ -214,7 +204,6 @@ function update() {
                 playSfx('parry');
                 particles.push({type: 2, x: b.x, y: b.y, velX: (Math.random()-0.5)*4, velY: (Math.random()-0.5)*4, lifeTime: 0.5});
                 catPower += catPowerRegenPerBullet;
-                texts.push({text: "Parry", x: b.x, y: b.y, color: '#7cf', lifeTime: 1});
                 b.lifeTime = 5;
                 score += 15;
             }
@@ -251,6 +240,7 @@ function drawMap() {
 }
 
 function drawPlayer() {
+    if (hitPoints <= 0) { return; }
     const barW = 66, barH = 7;
     const barX = playerX - offsetX - barW/2;
     const barY = playerY - offsetY + 15;
@@ -268,8 +258,6 @@ function drawPlayer() {
         ctx.lineTo(tx,barY + barH + 5);
         ctx.stroke();
     }
-    ctx.restore();
-
     for (let i = 1; i <= hitPoints; i++) {
         ctx.drawImage(imgDict['life'], canvas.width / 2 - 20 - i * (24 + 8), canvas.height - 45, 24, 24);
     }
@@ -281,12 +269,9 @@ function drawPlayer() {
             if (ratio > 0) ctx.drawImage(imgDict['shield'], 0, 0, ratio * 8, 8, canvas.width / 2 + 20 + i * (24 + 8), canvas.height - 45, 24 * ratio, 24);
         }
     }
-
-    ctx.save();
     ctx.globalAlpha = 0.18;
     ctx.beginPath();
     ctx.arc(playerX - offsetX, playerY - offsetY, convertRadius, 0, Math.PI * 2);
-    ctx.fillStyle = '#7cf';
     if (playerCatStatus || invTime > 0) {
         ctx.fill();
     } else {
@@ -294,14 +279,12 @@ function drawPlayer() {
         ctx.lineWidth = 2;
         ctx.stroke();
     }
-    ctx.restore();
-
+    ctx.globalAlpha = 1;
     const width = playerCatStatus ? CAT_WIDTH : PLAYER_WIDTH;
     const height = playerCatStatus ? CAT_HEIGHT : PLAYER_HEIGHT;
     let drawX = playerX - width / 2 - offsetX;
     let drawY = playerY - height - offsetY;
     if (playerCatStatus) { drawY -= Math.sin(Math.PI * (dashTimeMax - dashTime) / dashTimeMax) * 20; }
-    ctx.save();
     let flip = mouseDownX < playerX;
     if (flip) {
         ctx.translate(drawX + width / 2, 0);
@@ -462,7 +445,7 @@ function updateBullets() {
         }
         if(!b.converted){
             let dx = b.x - playerX, dy = b.y - playerY;
-            if(Math.hypot(dx, dy) <= HIT_RADIUS){
+            if(Math.hypot(dx, dy) <= HIT_RADIUS && invTime <= 0 && hitPoints > 0){
                 b.lifeTime = 0;
                 playSfx('alarm');
                 for (let i = 0; i < 6; i++) {
@@ -476,6 +459,7 @@ function updateBullets() {
                 else { hitPoints--;
                     if (hitPoints > 1) { texts.push({text: hitPoints + " Lifes Remaining", x: b.x, y: b.y - 20, color: 'rgba(255, 92, 92, 1)', lifeTime: 1}); }
                     else {texts.push({text: "Caution: Last Life!", x: b.x, y: b.y - 20, color: 'rgba(255, 92, 92, 1)', lifeTime: 1});}
+                    if (hitPoints <= 0) { stage = -Math.abs(stage); }
                 }
             }
             const len = Math.hypot(b.velX, b.velY) || 1;
@@ -581,17 +565,19 @@ function drawHint() {
     ctx.font = 'bold 18px "Press Start 2P", "VT323", "Consolas", "monospace"';
     ctx.textAlign = 'center';
     ctx.fillStyle = '#ffffff73';
-    ctx.fillText("Use [W][A][S][D] to Move", 512 - offsetX, 392 - offsetY);
-    ctx.fillText("Mouse Right Click to turn into a Black Cat and dash", 512 - offsetX, 422 - offsetY);
-    let tipX = 512 + (moveFlags[0] ? 1024 : 0);
-    let tipY = 512 + (moveFlags[0] ? 0 : 1024);
-    ctx.fillText("When transformed into a cat, a field of doom forms around you", tipX - offsetX, tipY - 120 - offsetY);
-    ctx.fillText("Enemy bullets affected by doom will turn to attack themselves", tipX - offsetX, tipY - 90 - offsetY);
-    ctx.fillText("Try defeat the guard here", tipX - offsetX, tipY - 60 - offsetY);
-    tipX += moveFlags[1] ? 675 : 0;
-    tipY += moveFlags[1] ? 0 : 675;
-    ctx.fillText("Be careful! Being hit by bullets will cause shield/hit-points lost.", tipX - offsetX, tipY - 30 - offsetY);
-    ctx.fillText("When hit-points drop to 0, Rin will fail to escape.", tipX - offsetX, tipY - offsetY);
+    if (stage === 1) {
+        ctx.fillText("Use [W][A][S][D] to Move", 512 - offsetX, 392 - offsetY);
+        ctx.fillText("Mouse Right Click to turn into a Black Cat and dash", 512 - offsetX, 422 - offsetY);
+        let tipX = 512 + (moveFlags[0] ? 1024 : 0);
+        let tipY = 512 + (moveFlags[0] ? 0 : 1024);
+        ctx.fillText("When transformed into a cat, a field of doom forms around you", tipX - offsetX, tipY - 120 - offsetY);
+        ctx.fillText("Enemy bullets affected by doom will turn to attack themselves", tipX - offsetX, tipY - 90 - offsetY);
+        ctx.fillText("Try defeat the guard here", tipX - offsetX, tipY - 60 - offsetY);
+        tipX += moveFlags[1] ? 675 : 0;
+        tipY += moveFlags[1] ? 0 : 675;
+        ctx.fillText("Be careful! Being hit by bullets will cause shield/hit-points lost.", tipX - offsetX, tipY - 30 - offsetY);
+        ctx.fillText("When hit-points drop to 0, Rin will fail to escape.", tipX - offsetX, tipY - offsetY);
+    }
 
     ctx.shadowColor = 'rgba(0,255,255,0.7)';
     ctx.shadowBlur = 32;
@@ -671,19 +657,37 @@ function drawMenu() {
         ctx.font = 'bold 24px "Press Start 2P", "VT323", "Consolas", "monospace"';
         ctx.fillText("Press [Enter] to Upstairs", canvas.width / 2, canvas.height / 2 + 120);
     }
+    if (stage < -1e-9) {
+        ctx.font = 'bold 62px "Press Start 2P", "VT323", "Consolas", "monospace"';
+        ctx.fillText("Game Over", canvas.width / 2, canvas.height / 2);
+        ctx.font = 'bold 24px "Press Start 2P", "VT323", "Consolas", "monospace"';
+        ctx.fillText("Press [Enter] to Continue", canvas.width / 2, canvas.height / 2 + 120);
+        ctx.fillText("Press [R] to Restart", canvas.width / 2, canvas.height / 2 + 150);
+        ctx.font = 'bold 18px "Press Start 2P", "VT323", "Consolas", "monospace"';
+        ctx.fillText("Continuing will affect the final ending", canvas.width / 2, canvas.height / 2 + 180);
+    }
     ctx.restore();
     if (keyState['enter'] && stage % 2 === 0) {
+        stage++; playSfx('tip'); restartMap();
+    }
+    if (stage > 0 && enemies.length === 0 && stage % 2 === 1) {
         stage++; playSfx('tip');
     }
-    if (enemies.length === 0 && stage % 2 === 1) {
-        stage++; playSfx('tip');
+    if (stage < -1e-9 && keyState['r']) {
+        stage = 0; playSfx('tip'); restartMap(); continued = false;
+    }
+    if (stage < -1e-9 && keyState['enter']) {
+        stage = Math.abs(stage); playSfx('tip'); continued = true;
+        hitPoints = 3; shieldPoints = 3; catPower = catPowerMax;
     }
 }
 
 function drawMask() {
     ctx.save();
-    ctx.globalAlpha = maskAlpha;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.globalAlpha = 1;
+    ctx.filter = `blur(${Math.abs(maskAlpha) * 12}px)`;
+    ctx.drawImage(canvas, 0, 0);
+    ctx.filter = 'none';
     ctx.restore();
     if (stage % 2 == 1) { maskAlpha = lerp(maskAlpha, 0, 0.1); }
     else { maskAlpha = lerp(maskAlpha, 1, 0.1); }
