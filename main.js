@@ -40,8 +40,8 @@ const TILE_HEIGHT = 32;
 const PLAYER_WIDTH = 26;
 const PLAYER_HEIGHT = 40;
 const BULLET_SIZE = 14;
-const BULLET_OFFSET_Y = -21;
-const HIT_RADIUS = 14;
+const BULLET_OFFSET_Y = -15;
+const HIT_RADIUS = 10;
 const CAT_WIDTH = 26;
 const CAT_HEIGHT = 22;
 const MAP_SIZE = 256;
@@ -70,6 +70,7 @@ let playerBlockX = 0;
 let playerBlockY = 0;
 let currLevel = 0;
 const speed = 4;
+const slowSpeed = 2.5;
 
 let dashX = 0, dashY = 0;
 let dashTime = 0;
@@ -91,6 +92,10 @@ let enemies = []; // {name, x, y, hp}
 let bullets = []; // {type, x, y, velX, velY, converted, lifeTime}
 let texts = []; // {text, x, y, lifeTime}
 let particles = []; // {type, x, y, velX, velY, lifeTime}
+
+const tier1Enemies = [1, 2, 3, 8, 12]
+const tier2Enemies = [4, 5, 6, 7, 9, 10, 11, 17, 18];
+const tier3Enemies = [13, 14, 15, 16, 19, 20];
 
 let canvas = document.getElementById('game');
 let ctx = canvas.getContext('2d');
@@ -128,11 +133,21 @@ function restartMap() {
             enemies.push({type: 1, x: (currRoomX + 0.5) * BLOCK_SIZE * TILE_WIDTH, y: (currRoomY + 0.5) * BLOCK_SIZE * TILE_HEIGHT, hp: 20, maxHp: 20});
         }
         if (currRoomX + currRoomY >= 2 && currRoomX + currRoomY < BLOCKS * 2 - 2) {
-            let enemyCount = 6 + Math.floor(Math.random() * 4);
-            for (let i = 0; i < enemyCount; i++) {
+            function pick(arr, n) {
+                const result = [];
+                for (let i = 0; i < n; i++) {
+                    result.push(arr[Math.floor(Math.random() * arr.length)]);
+                }
+                return result;
+            }
+            let direct = pick(tier1Enemies, 2 + Math.floor(Math.random() * 2));
+            let spread = pick(tier2Enemies, Math.floor(Math.random() * 3));
+            let disturb = pick(tier3Enemies, Math.floor(Math.random() * 2));
+            let allTypes = direct.concat(spread, disturb);
+            for (let i = 0; i < allTypes.length; i++) {
                 let ex = ((currRoomX * BLOCK_SIZE + 12) + Math.random() * (BLOCK_SIZE - 24)) * TILE_WIDTH;
                 let ey = ((currRoomY * BLOCK_SIZE + 12) + Math.random() * (BLOCK_SIZE - 24)) * TILE_HEIGHT;
-                enemies.push({ type:Math.floor(Math.random() * 4) + 1, x: ex, y: ey, hp: 15 });
+                enemies.push({ type: allTypes[i], x: ex, y: ey, hp: 30 });
             }
         }
         else if (currRoomX + currRoomY === BLOCKS * 2 - 2) {
@@ -151,6 +166,7 @@ const keyState = {};
 document.addEventListener('keydown', e => { keyState[e.key.toLowerCase()] = true; });
 document.addEventListener('keyup',   e => { keyState[e.key.toLowerCase()] = false; });
 
+let mouseLeftDown = false;
 let mouseRightDown = false;
 let mouseDownX = 0, mouseDownY = 0;
 canvas.addEventListener('contextmenu', e => e.preventDefault());
@@ -159,6 +175,9 @@ canvas.addEventListener('mousemove', e => {
     mouseDownY = e.offsetY + offsetY;
 });
 canvas.addEventListener('mousedown', e => {
+    if (e.button === 0) {
+        mouseLeftDown = true;
+    }
     if (e.button === 2 && dashTime <= 0 && catPower >= dashPowerCost) {
         mouseRightDown = true;
         mouseDownX = e.offsetX + offsetX;
@@ -171,6 +190,7 @@ canvas.addEventListener('mousedown', e => {
     }
 });
 canvas.addEventListener('mouseup', e => {
+    if (e.button === 0) mouseLeftDown = false;
     if (e.button === 2) mouseRightDown = false;
 });
 
@@ -188,8 +208,8 @@ function update() {
         let speedX = (keyState['a']) ? -1 : 0 + (keyState['d']) ? 1 : 0;
         let speedY = (keyState['w']) ? -1 : 0 + (keyState['s']) ? 1 : 0;
         let length = Math.hypot(speedX, speedY) || 1; if (length === 0) { return; }
-        shiftX = speedX * speed / length;
-        shiftY = speedY * speed / length;
+        shiftX = speedX * ((mouseLeftDown ? slowSpeed : speed) / length);
+        shiftY = speedY * ((mouseLeftDown ? slowSpeed : speed) / length);
     }
     playerX += shiftX;
     if (getCollision(playerX, playerY)) { playerX -= shiftX; }
@@ -286,6 +306,7 @@ function drawPlayer() {
     let drawY = playerY - height - offsetY;
     if (playerCatStatus) { drawY -= Math.sin(Math.PI * (dashTimeMax - dashTime) / dashTimeMax) * 20; }
     let flip = mouseDownX < playerX;
+    ctx.save();
     if (flip) {
         ctx.translate(drawX + width / 2, 0);
         ctx.scale(-1, 1);
@@ -294,56 +315,38 @@ function drawPlayer() {
         ctx.drawImage(imgDict[playerCatStatus ? 'cat' : 'player'], drawX, drawY, width, height);
     }
     ctx.restore();
+    if (mouseLeftDown && !playerCatStatus) {
+        ctx.save();
+        ctx.fillStyle = '#ff4040ff';
+        ctx.shadowColor = '#ff4040ff';
+        ctx.shadowBlur = 32;
+        ctx.beginPath();
+        ctx.arc(playerX - offsetX, playerY + BULLET_OFFSET_Y - offsetY, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+    }
+    ctx.restore();
 
 }
 
-function enemyShoot1(x, y, shiftAngles = [0], type = 1, speed = 6) {
+function getAngleTowardsPlayer(x, y) {
     let dx = playerX - x; let dy = playerY - y;
-    for (let shiftAngle of shiftAngles) {
-        let angle = Math.atan2(dy, dx) + shiftAngle;
+    return Math.atan2(dy, dx);
+}
+
+function enemyShoot(x, y, angles = [0], types = [1], speeds = [6], lifeTimes = [10]) {
+    for (let i = 0; i < angles.length; i++) {
+        let angle = angles[i];
+        let type = types[i % types.length];
+        let speed = speeds[i % speeds.length];
+        let lifeTime = lifeTimes[i % lifeTimes.length];
         const bullet = {
             type: type,
             x: x, y: y,
             velX: Math.cos(angle) * speed, velY: Math.sin(angle) * speed,
-            lifeTime: 5
+            lifeTime: lifeTime || 10,
         };
         bullets.push(bullet);
-    }
-}
-
-function enemyShoot2(x, y, gapAngle, type = 1) {
-    let currAngle = 0;
-    const angles = [];
-    while (currAngle < Math.PI * 2 - 1e-9) {
-        angles.push(currAngle);
-        currAngle += gapAngle;
-    }
-    for (let angle of angles) {
-        enemyShoot1(x, y, [angle], type);
-    }
-}
-
-function enemyShoot3(x, y, radius, gapAngle, type = 1, speed = 6, shiftAngles = [0]) {
-    let currAngle = 0;
-    const angles = [];
-    while (currAngle < Math.PI * 2 - 1e-9) {
-        enemyShoot1(x + Math.cos(currAngle) * radius, y + Math.sin(currAngle) * radius,
-        shiftAngles, type, speed);
-        currAngle += gapAngle;
-    }
-}
-
-function enemyShoot4(x, y, shiftAngles = [0], type = 1, speed = 6, amount = 1, decreaseSpeed = 0.5) {
-    for (let i = 0; i < amount; i++) {
-        enemyShoot1(x, y, shiftAngles, type, speed - i * decreaseSpeed);
-    }
-}
-
-function enemyShoot5(x, y, radius, type = 1, speed = 6, amount = 1, continAmount = 1, decreaseSpeed = 0.5) {
-    for (let i = 0; i < amount; i++) {
-        const len = (0.5 + 0.5 * Math.random()) * radius;
-        const angle = Math.random() * Math.PI * 2;
-        enemyShoot4(x + len * Math.cos(angle), y + len * Math.sin(angle), [0], type, speed, continAmount, decreaseSpeed);
     }
 }
 
@@ -353,43 +356,85 @@ function updateEnemies() {
         const enemyBlockX = Math.floor(e.x / TILE_WIDTH / BLOCK_SIZE);
         const enemyBlockY = Math.floor(e.y / TILE_HEIGHT / BLOCK_SIZE);
         currLevel = Math.min(currLevel, enemyBlockX + enemyBlockY);
+        const a = getAngleTowardsPlayer(e.x, e.y);
+        const rAngle = Math.random() * 2 * Math.PI;
         if (playerBlockX === enemyBlockX && playerBlockY === enemyBlockY) {
-            if (e.type === 1) {
-                if (currFrame % 100 % 6 === 0 && currFrame % 100 < 30) {
-                    enemyShoot1(e.x, e.y, [0], 3);
-                }
+            if (e.type === 1 && currFrame % 70 % 6 === 0 && currFrame % 70 < 30) {
+                // snipe
+                enemyShoot(e.x, e.y, [a], [3]);
             }
-            else if (e.type === 2) {
-                if (currFrame % 100 % 5 === 0 && currFrame % 100 < 25) {
-                    enemyShoot1(e.x, e.y, [-Math.PI / 12, Math.PI / 12], 2);
-                }
+            else if ((e.type === 2 || e.type === 3) && currFrame % 70 % 5 === 0 && currFrame % 70 < 25) {
+                // multi-snipe
+                const angles = (e.type === 2 ? [a-Math.PI / 12, a+Math.PI / 12] : [a, a-Math.PI / 18, a+Math.PI / 18]);
+                enemyShoot(e.x, e.y, angles, [2]);
             }
-            else if (e.type === 3) {
-                if (currFrame % 240 === 0) {
-                    enemyShoot2(e.x, e.y, Math.PI / 24, 4);
-                }
+            else if (e.type === 4 && currFrame % 80 < 25) {
+                // heart
+                enemyShoot(e.x, e.y, [a + currFrame % 80 * Math.PI / 24, a - currFrame % 80 * Math.PI / 24], [2], [2.5]);
             }
-            else if (e.type === 4) {
-                if (currFrame % 240 === 0) {
-                    enemyShoot2(e.x, e.y, Math.PI / 18, 5);
-                }
+            else if (((e.type === 5 || e.type === 6 || e.type === 7) && currFrame % 80 === 0) ||
+                    ((e.type === 13 || e.type === 14) && currFrame % 100 <= 30 && currFrame % 10 === 0)) {
+                // circle && backward circle && turning circle && multi-circle
+                for (let i = 0; i < 24; i++) { enemyShoot(e.x, e.y, [a + i * Math.PI / 12], [e.type >= 13 ? [4, 5][e.type - 13] : [1, 4, 5][e.type - 5]], [4.5]); }
+            }
+            else if ((e.type >= 8 && e.type <= 11) && currFrame % 75 === 0) {
+                // line && sweep line && tighening line && random cross
+                const angles = [[a], [a, a + Math.PI], [a - Math.PI / 3, a + Math.PI / 3], [rAngle, rAngle + Math.PI / 2, rAngle + Math.PI, rAngle + Math.PI / 2 * 3]][e.type - 8];
+                const types = [[1], [5], [5, 6], [1]][e.type - 8];
+                for (let i = 0; i < 15; i++) { enemyShoot(e.x, e.y, angles, types, [5 - i * 0.25]); }
+            }
+            else if (e.type === 12 && currFrame % 60 === 0) {
+                // suround bullet
+                for (let i = 0; i < 16; i++) { enemyShoot(e.x + Math.cos(i * Math.PI / 8) * 45, e.y + Math.sin(i * Math.PI / 8) * 45, [a], [1], [3]); }
+            }
+            else if (e.type === 15 && currFrame % 90 <= 45 && currFrame % 3 === 0) {
+                // random spread
+                const angle = Math.random() * 2 * Math.PI;
+                enemyShoot(e.x, e.y, [angle, angle, angle], [2, 5, 6], [3]);
+            }
+            else if (e.type === 16 && currFrame % 100 <= 60 && currFrame % 2 === 0) {
+                // machine gun
+                enemyShoot(e.x, e.y, [a + Math.random() * Math.PI / 6 - Math.PI / 12], [2], [2 + Math.random() * 2.5]);
+            }
+            else if (e.type === 17 && currFrame % 100 <= 60 && currFrame % 15 === 0) {
+                // quick shot gun
+                for (let i = 0; i < 8; i++) { enemyShoot(e.x, e.y, [a + Math.random() * Math.PI / 2.5 - Math.PI / 5], [2], [3 + Math.random() * 1.5]); }
+            }
+            else if (e.type === 18 && currFrame % 75 === 0) {
+                // boom
+                for (let i = 0; i < 6; i++) { enemyShoot(e.x, e.y, [a + i * Math.PI / 3], [7], [2.8]); }
+            }
+            else if ((e.type === 19 || e.type === 20) && currFrame % 80 === 0) {
+                // shotgun with boom
+                const angles = (e.type === 20 ? [a-Math.PI / 6, a+Math.PI / 6] : [a, a-Math.PI / 12, a+Math.PI / 12]);
+                enemyShoot(e.x, e.y, angles, [7], [4]);
             }
             else if (e.type === 114) {
-                const tick = currFrame % 1400;
-                if (tick < 230 && tick % 3 == 0) {
-                    enemyShoot1(e.x, e.y, [(Math.random()-0.5)*Math.PI/10], 2, 7.5);
+                const tick = currFrame % 1500;
+                if (tick < 400) {
+                    if (tick % 2 === 0) { enemyShoot(e.x, e.y, [a + tick * Math.PI / 30], [4], [2.5]); }
+                    if (tick % 40 === 0) { for (let i = 0; i < 24; i++) { enemyShoot(e.x, e.y, [a + i * Math.PI / 12], [tick >= 200 ? 5 : 6], [4.5]); } }
                 }
-                else if (tick >= 300 && tick <= 600 && tick % 50 == 0) {
-                    enemyShoot3(e.x, e.y, 50, Math.PI / 24, 2, 3.5, [0, -Math.PI / 4, Math.PI / 4]);
+                else if (tick >= 400 && tick < 800) {
+                    if (tick % 45 === 0) {
+                        for (let i = 0; i < 16; i++) {
+                            const bx = e.x + Math.cos(i * Math.PI / 8) * 45;
+                            const by = e.y + Math.sin(i * Math.PI / 8) * 45;
+                            enemyShoot(bx, by, [getAngleTowardsPlayer(bx, by)], [2], [2.5]);
+                        }
+                    }
+                    if (tick % 60 === 0) {
+                        const a1 = Math.PI / 4.5 * Math.random(); const a2 = Math.PI / 4.5 * Math.random();
+                        for (let i = 0; i < 15; i++) { enemyShoot(e.x, e.y, [a, a + a1, a - a2], [1], [5 - i * 0.25]); }
+                    }
                 }
-                else if (tick >= 500 && tick <= 900 && tick % 45 == 0) {
-                    enemyShoot4(e.x, e.y, [0, -Math.PI / 12, Math.PI / 12], 3, 8, 10, 0.5);
+                else if (tick >= 800 && tick < 1200) {
+                    if (tick % 3 === 0) { enemyShoot(e.x, e.y, [a + Math.random() * Math.PI / 6 - Math.PI / 12], [2], [2 + Math.random() * 2.5]); }
+                    if (tick % 120 === 0) { for (let i = 0; i < 15; i++) { enemyShoot(e.x, e.y, [rAngle, rAngle + Math.PI / 2, rAngle + Math.PI, rAngle + Math.PI / 2 * 3], [1], [5 - i * 0.25]); } }
                 }
-                else if (tick >= 1000 && tick <= 1100 && tick % 20 == 0) {
-                    enemyShoot2(e.x, e.y, Math.PI / 24, 5);
-                }
-                else if ((tick >= 1200 || tick <= 100) && tick % 60 == 0) {
-                    enemyShoot5(e.x, e.y, 145, 2, 4, 5, 15, 0.2);
+                else if (tick >= 1200) {
+                    if (tick % 3 === 0) { for (let i = 0; i < 12; i++) { enemyShoot(e.x, e.y, [a + i * Math.PI / 6], [2, 5, 6][i % 3], [4.5]); }}
+                    if (tick % 90 === 0) { for (let i = 0; i < 15; i++) { enemyShoot(e.x, e.y, [a - Math.PI / 2.5, a + Math.PI / 2.5], [5, 6], [5 - i * 0.25]); }}
                 }
             }
         }
@@ -464,12 +509,12 @@ function updateBullets() {
             }
             const len = Math.hypot(b.velX, b.velY) || 1;
             if (b.type === 2) {
-                b.velX = b.velX / len * Math.min(len + 0.06, 7);
-                b.velY = b.velY / len * Math.min(len + 0.06, 7);
+                b.velX = b.velX / len * Math.min(len + 0.06, 5);
+                b.velY = b.velY / len * Math.min(len + 0.06, 5);
             }
             else if (b.type === 3) {
-                b.velX = b.velX / len * Math.max(len - 0.06, 2.5);
-                b.velY = b.velY / len * Math.max(len - 0.06, 2.5);
+                b.velX = b.velX / len * Math.max(len - 0.06, 2);
+                b.velY = b.velY / len * Math.max(len - 0.06, 2);
             }
             else if (b.type === 4) {
                 if (!b.velBX || !b.velBY) {
@@ -479,20 +524,20 @@ function updateBullets() {
                 b.velX = b.velX * 0.992 + b.velBX * 0.008;
                 b.velY = b.velY * 0.992 + b.velBY * 0.008;
             }
-            else if (b.type === 5) {
+            else if (b.type === 5 || b.type === 6) {
                 b._angle = b._angle ?? Math.atan2(b.velY, b.velX);
-                b._angle += 0.015;
+                b._angle += (b.type === 5 ? 0.015 : -0.015);
                 b.velX = Math.cos(b._angle) * len;
                 b.velY = Math.sin(b._angle) * len;
             }
-            else if (b.type === 6) {
+            else if (b.type === 7) {
                 if (!b._spawned && len > 2) {
                     let newLen = Math.max(len - 0.06, 2);
                     b.velX = b.velX / len * newLen;
                     b.velY = b.velY / len * newLen;
                     if (newLen <= 2) {
                         b._spawned = true;
-                        // Add Spawn Code
+                        for (let i = 0; i < 12; i++) { enemyShoot(b.x, b.y, [i * Math.PI / 6], [1], [4.5]); }
                         b.lifeTime = 0;
                     }
                 }
@@ -512,7 +557,7 @@ function updateBullets() {
         ctx.save();
         ctx.translate(x, y);
         ctx.rotate(angle);
-        ctx.drawImage(b.converted ? imgDict['bulletc'] : imgDict['bullet1'], -BULLET_SIZE/2, -BULLET_SIZE/2, BULLET_SIZE, BULLET_SIZE);
+        ctx.drawImage(b.converted ? imgDict['bulletc'] : (b.type >= 5 ? imgDict['bullet1'] : imgDict['bullet2']), -BULLET_SIZE/2, -BULLET_SIZE/2, BULLET_SIZE, BULLET_SIZE);
         ctx.restore();
     }
     bullets = bullets.filter(b => b.lifeTime > 0);
