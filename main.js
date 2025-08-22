@@ -15,7 +15,7 @@ const FONTS = '"Press Start 2P", "VT323", "Consolas", "monospace"';
 const BLUE = '#3ae1f4ff';
 const BRIGHT_BLUE = '#83f3ffff'
 const RED = '#ff5c5c';
-const GREY = '#adadadff';
+const GREY = '#d3d3d3ff';
 
 const maxShieldPoints = 3;
 const shieldRegen = 1 / 900;
@@ -28,13 +28,17 @@ const catPowerMax = 300;
 const convertRadius = 100;
 const catPowerRegen = 100 / 126;
 const catPowerRegenPerBullet = 0;
+const titleShowTimeMax = 3;
 
 const tier1Enemies = [1, 2, 3, 8, 12]
-const tier2Enemies = [4, 5, 6, 7, 9, 10, 11, 18];
-const tier3Enemies = [13, 14, 15, 16, 17, 19, 20];
+const tier2Enemies = [4, 5, 6, 7, 9, 11, 18];
+const tier3Enemies = [10, 13, 14, 15, 16, 17, 19, 20];
+const tier1StageSpawns = [[2, 3], [2, 4], [3, 4]];
+const tier2StageSpawns = [[1, 1], [1, 2], [1, 3]];
+const tier3StageSpawns = [[0, 1], [0, 1], [1, 2]];
 
 const imgDict = {};
-['brick1','brick2','player','cat','enemy', 'bullet1', 'bullet2', 'bullet3', 'bulletc', 'life', 'shield'].forEach(name => {
+['brick1','brick2','player','cat','enemy', 'bullet1', 'bullet2', 'bulletc', 'life', 'shield'].forEach(name => {
     const img = new Image();
     img.src = `assets/${name}.png`;
     imgDict[name] = img;
@@ -76,6 +80,8 @@ let particles = []; // {type, x, y, velX, velY, lifeTime}
 let lastProgressDraw = 0;
 let lastRatio = 0;
 
+let titleShowTime = 0;
+
 // Input
 let mouseLeftDown = false;
 let mouseRightDown = false;
@@ -87,8 +93,8 @@ document.addEventListener('keyup',   e => { keyState[e.key.toLowerCase()] = fals
 
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 canvas.addEventListener('mousemove', e => {
-    mouseDownX = e.offsetX + offsetX;
-    mouseDownY = e.offsetY + offsetY;
+    mouseDownX = e.offsetX;
+    mouseDownY = e.offsetY;
 });
 canvas.addEventListener('mousedown', e => {
     if (e.button === 0) {
@@ -96,13 +102,14 @@ canvas.addEventListener('mousedown', e => {
     }
     if (e.button === 2 && dashTime <= 0 && catPower >= dashPowerCost) {
         mouseRightDown = true;
-        mouseDownX = e.offsetX + offsetX;
-        mouseDownY = e.offsetY + offsetY;
+        mouseDownX = e.offsetX;
+        mouseDownY = e.offsetY;
         dashTime = dashTimeMax;
-        let dx = mouseDownX - playerX, dy = mouseDownY - playerY, len = Math.hypot(dx, dy) || 1;
+        let dx = mouseDownX + offsetX - playerX, dy = mouseDownY + offsetY - playerY, len = Math.hypot(dx, dy) || 1;
         dashX = dx / len * dashSpeed;
         dashY = dy / len * dashSpeed;
         catPower -= dashPowerCost;
+        texts.push({ text: "Meow!", x: playerX, y: playerY, lifeTime: 1, color: BRIGHT_BLUE });
     }
 });
 canvas.addEventListener('mouseup', e => {
@@ -116,6 +123,7 @@ function restartMap() {
     let currRoomX = 0, currRoomY = 0;
     let moveRightFlag = 0;
     while (currRoomX < BLOCKS && currRoomY < BLOCKS) {
+        // Spawn Map Tiles
         for (let y = 0; y < BLOCK_SIZE; y++) for (let x = 0; x < BLOCK_SIZE; x++)
             map[currRoomY * BLOCK_SIZE + y][currRoomX * BLOCK_SIZE + x] = (x == 0 || y == 0 || x == BLOCK_SIZE - 1 || y == BLOCK_SIZE - 1) ? "brick1" : "brick2";
 
@@ -127,6 +135,7 @@ function restartMap() {
                 for(let x=BLOCK_SIZE/2-2;x<BLOCK_SIZE/2+2;x++)
                     [map[currRoomY*BLOCK_SIZE-1][currRoomX*BLOCK_SIZE+x],map[currRoomY*BLOCK_SIZE][currRoomX*BLOCK_SIZE+x]]=["brick2","brick2"];
         }
+        // Move to next room
         if (currRoomX === 0 && currRoomY === 0) { firstMoveRightFlag = moveRightFlag; }
         moveRightFlag = Math.random() < 0.5;
         moveFlags.push(moveRightFlag);
@@ -134,21 +143,21 @@ function restartMap() {
         if (currRoomY === BLOCKS - 1) { moveRightFlag = true; }
         if (moveRightFlag) { currRoomX++; } else { currRoomY++; }
 
+        // Spawn Enemies
         if (currRoomX + currRoomY === 1) {
             enemies.push({type: 1, x: (currRoomX + 0.5) * BLOCK_SIZE * TILE_WIDTH, y: (currRoomY + 0.5) * BLOCK_SIZE * TILE_HEIGHT, hp: 20, maxHp: 20});
         }
         if (currRoomX + currRoomY >= 2 && currRoomX + currRoomY < BLOCKS * 2 - 2) {
             function pick(arr, n) {
                 const result = [];
-                for (let i = 0; i < n; i++) {
-                    result.push(arr[Math.floor(Math.random() * arr.length)]);
-                }
+                for (let i = 0; i < n; i++) { result.push(arr[Math.floor(Math.random() * arr.length)]); }
                 return result;
             }
-            let direct = pick(tier1Enemies, 2 + Math.floor(Math.random() * 2));
-            let spread = pick(tier2Enemies, Math.floor(Math.random() * 3));
-            let disturb = pick(tier3Enemies, Math.floor(Math.random() * 2));
-            let allTypes = direct.concat(spread, disturb);
+            const stageIndex = Math.floor(stage / 2);
+            let tier1 = pick(tier1Enemies, ranInt(tier1StageSpawns[stageIndex][0], tier1StageSpawns[stageIndex][1]));
+            let tier2 = pick(tier2Enemies, ranInt(tier2StageSpawns[stageIndex][0], tier2StageSpawns[stageIndex][1]));
+            let tier3 = pick(tier3Enemies, ranInt(tier3StageSpawns[stageIndex][0], tier3StageSpawns[stageIndex][1]));
+            let allTypes = tier1.concat(tier2, tier3);
             for (let i = 0; i < allTypes.length; i++) {
                 let ex = ((currRoomX * BLOCK_SIZE + 12) + Math.random() * (BLOCK_SIZE - 24)) * TILE_WIDTH;
                 let ey = ((currRoomY * BLOCK_SIZE + 12) + Math.random() * (BLOCK_SIZE - 24)) * TILE_HEIGHT;
@@ -156,7 +165,7 @@ function restartMap() {
             }
         }
         else if (currRoomX + currRoomY === BLOCKS * 2 - 2) {
-            enemies.push({type: 114, x: (currRoomX + 0.5) * BLOCK_SIZE * TILE_WIDTH, y: (currRoomY + 0.5) * BLOCK_SIZE * TILE_HEIGHT, hp: 1500, maxHp: 1500});
+            enemies.push({type: 114 + Math.floor(stage / 2), x: (currRoomX + 0.5) * BLOCK_SIZE * TILE_WIDTH, y: (currRoomY + 0.5) * BLOCK_SIZE * TILE_HEIGHT, hp: 1500, maxHp: 1500});
         }
     }
 }
@@ -219,6 +228,7 @@ function update() {
         currLevel = Math.min(currLevel, enemyBlockX + enemyBlockY);
         const angle = getAngleTowardsPlayer(e.x, e.y);
         const rAngle = Math.random() * 2 * Math.PI;
+        const tick = currFrame % 1500;
         // Enemy fire bullets
         if (playerBlockX === enemyBlockX && playerBlockY === enemyBlockY) {
             if (e.type === 1 && currFrame % 70 % 6 === 0 && currFrame % 70 < 30) {
@@ -227,19 +237,19 @@ function update() {
             }
             else if ((e.type === 2 || e.type === 3) && currFrame % 70 % 5 === 0 && currFrame % 70 < 25) {
                 // multi-snipe
-                const angles = (e.type === 2 ? [angle-Math.PI / 12, angle+Math.PI / 12] : [angle, angle-Math.PI / 18, angle+Math.PI / 18]);
+                const angles = (e.type === 2 ? [angle-PI2ToX(24), angle+PI2ToX(24)] : [angle, angle-PI2ToX(36), angle+PI2ToX(36)]);
                 enemyShoot(e.x, e.y, angles, [2]);
             }
             else if (e.type === 4 && currFrame % 80 < 25) {
                 // heart
-                enemyShoot(e.x, e.y, [angle + currFrame % 80 * Math.PI / 24, angle - currFrame % 80 * Math.PI / 24], [2], [2.5]);
+                enemyShoot(e.x, e.y, [angle + currFrame % 80 * PI2ToX(48), angle - currFrame % 80 * PI2ToX(48)], [2], [2.5]);
             }
             else if (((e.type === 5 || e.type === 6 || e.type === 7) && currFrame % 80 === 0) ||
                     ((e.type === 13 || e.type === 14) && currFrame % 100 <= 30 && currFrame % 10 === 0)) {
                 // circle && backward circle && turning circle && multi-circle
-                for (let i = 0; i < 24; i++) { enemyShoot(e.x, e.y, [angle + i * Math.PI / 12], [e.type >= 13 ? [4, 5][e.type - 13] : [1, 4, 5][e.type - 5]], [4.5]); }
+                for (let i = 0; i < 24; i++) { enemyShoot(e.x, e.y, [angle + i * PI2ToX(24)], [e.type >= 13 ? [4, 5][e.type - 13] : [1, 4, 5][e.type - 5]], [4.5]); }
             }
-            else if ((e.type >= 8 && e.type <= 11) && currFrame % 75 === 0) {
+            else if ((e.type >= 8 && e.type <= 11) && currFrame % 80 === 0) {
                 // line && sweep line && tighening line && random cross
                 const angles = [[angle], [angle, angle + Math.PI], [angle - Math.PI / 3, angle + Math.PI / 3], [rAngle, rAngle + Math.PI / 2, rAngle + Math.PI, rAngle + Math.PI / 2 * 3]][e.type - 8];
                 const types = [[1], [5], [5, 6], [1]][e.type - 8];
@@ -252,33 +262,32 @@ function update() {
             else if (e.type === 15 && currFrame % 90 <= 45 && currFrame % 3 === 0) {
                 // random spread
                 const angle = Math.random() * 2 * Math.PI;
-                enemyShoot(e.x, e.y, [angle, angle, angle], [2, 5, 6], [3]);
+                enemyShoot(e.x, e.y, [angle, angle, angle], [2, 2, 2], [2.5, 3.5, 4.5]);
             }
             else if (e.type === 16 && currFrame % 100 <= 60 && currFrame % 2 === 0) {
                 // machine gun
-                enemyShoot(e.x, e.y, [angle + Math.random() * Math.PI / 6 - Math.PI / 12], [2], [2 + Math.random() * 2.5]);
+                enemyShoot(e.x, e.y, [angle + ranAngle(-PI2ToX(24), PI2ToX(24))], [2], [2 + Math.random() * 2.5]);
             }
             else if (e.type === 17 && currFrame % 100 <= 60 && currFrame % 15 === 0) {
                 // quick shot gun
-                for (let i = 0; i < 8; i++) { enemyShoot(e.x, e.y, [angle + Math.random() * Math.PI / 2.5 - Math.PI / 5], [2], [3 + Math.random() * 1.5]); }
+                for (let i = 0; i < 8; i++) { enemyShoot(e.x, e.y, [angle + ranAngle(-PI2ToX(10), PI2ToX(10))], [2], [3 + Math.random() * 1.5]); }
             }
             else if (e.type === 18 && currFrame % 75 === 0) {
                 // boom
-                for (let i = 0; i < 6; i++) { enemyShoot(e.x, e.y, [angle + i * Math.PI / 3], [7], [2.8]); }
+                for (let i = 0; i < 6; i++) { enemyShoot(e.x, e.y, [angle + i * PI2ToX(6)], [7], [2.8]); }
             }
             else if ((e.type === 19 || e.type === 20) && currFrame % 80 === 0) {
                 // shotgun with boom
-                const angles = (e.type === 20 ? [angle-Math.PI / 6, angle+Math.PI / 6] : [angle, angle-Math.PI / 12, angle+Math.PI / 12]);
+                const angles = (e.type === 20 ? [angle-PI2ToX(12), angle+PI2ToX(12)] : [angle, angle-PI2ToX(24), angle+PI2ToX(24)]);
                 enemyShoot(e.x, e.y, angles, [7], [4]);
             }
             else if (e.type === 114) {
-                const tick = currFrame % 1500;
                 if (tick < 400) {
                     if (tick % 2 === 0) { enemyShoot(e.x, e.y, [angle + tick * Math.PI / 30], [4], [2.5]); }
                     if (tick % 40 === 0) { for (let i = 0; i < 24; i++) { enemyShoot(e.x, e.y, [angle + i * Math.PI / 12], [tick >= 200 ? 5 : 6], [4.5]); } }
                 }
                 else if (tick >= 400 && tick < 800) {
-                    if (tick % 45 === 0) {
+                    if (tick % 40 === 0) {
                         for (let i = 0; i < 16; i++) {
                             const bx = e.x + Math.cos(i * Math.PI / 8) * 45;
                             const by = e.y + Math.sin(i * Math.PI / 8) * 45;
@@ -297,6 +306,67 @@ function update() {
                 else if (tick >= 1200) {
                     if (tick % 3 === 0) { for (let i = 0; i < 12; i++) { enemyShoot(e.x, e.y, [angle + i * Math.PI / 6], [2, 5, 6][i % 3], [4.5]); }}
                     if (tick % 90 === 0) { for (let i = 0; i < 15; i++) { enemyShoot(e.x, e.y, [angle - Math.PI / 2.5, angle + Math.PI / 2.5], [5, 6], [5 - i * 0.25]); }}
+                }
+            } else if (e.type === 115) {
+                if (tick <= 600) {
+                    if (tick % 45 === 0) {
+                        const shiftAngle = ranAngle(-PI2ToX(20), PI2ToX(20));
+                        for (let j = 0; j < 10; j++) {
+                            const fireAngle = angle + PI2ToX(10) * j + shiftAngle;
+                            for (let i = 0; i < 20; i++) { enemyShoot(e.x + Math.cos(i * Math.PI / 10) * 50, e.y + Math.sin(i * Math.PI / 10) * 50, [fireAngle], [2], [2.5]); }
+                        }
+                    }
+                }
+                if (tick >= 200 && tick <= 800) {
+                    if (tick % 48 === 0) {
+                        for (let i = 0; i < 16; i++) {
+                            const bx = e.x + Math.cos(i * Math.PI / 8) * 50;
+                            const by = e.y + Math.sin(i * Math.PI / 8) * 50;
+                            enemyShoot(bx, by, [getAngleTowardsPlayer(bx, by)], [3], [8]);
+                        }
+                    }
+                    if (tick % 3 === 0) { for (let i = 0; i < 12; i++) { enemyShoot(e.x, e.y, [i * Math.PI / 6 + Math.sin(tick / 300 * PI2ToX(2))], [2], [2]); }}
+                }
+                if (tick >= 800 && tick < 1350) {
+                    if (tick % 2 === 0) { enemyShoot(e.x, e.y, [angle + tick / 70 * PI2ToX(1) + ranAngle(-PI2ToX(50), PI2ToX(50)), angle - tick / 70 * PI2ToX(1) + ranAngle(-PI2ToX(50), PI2ToX(50))], [2], [2.5]); }
+                    if (tick % 120 === 0) { for (let i = 0; i < 15; i++) { enemyShoot(e.x, e.y, [rAngle, rAngle + PI2ToX(2)], [1], [8 - i * 0.25]); } }
+                }
+                if (tick >= 1000) {
+                    if (tick % 12 === 0) {
+                        const rx = ranAngle(-40, 40); const ry = ranAngle(-40, 40); const ra = ranAngle(-PI2ToX(6), PI2ToX(6));
+                        for (let i = 0; i < 15; i++) { enemyShoot(e.x + rx, e.y + ry, [angle + ra], [1], [7 - i * 0.25]); }
+                    }
+                }
+            }
+            else if (e.type === 116) {
+                if (tick <= 600 && tick % 10 === 0) {
+                    for (let i = 0; i < 30; i++) { enemyShoot(e.x, e.y, [i * PI2ToX(30) + tick / 400 * PI2ToX(6)], [(tick <= 150 || (tick >= 300 && tick <= 450)) ? 5 : 6], [6.5]); }
+                }
+                if (tick === 700 || tick === 1400) {
+                    for (let i = 0; i < 15; i++) { enemyShoot(e.x, e.y, [angle - Math.PI / 3, angle + Math.PI / 3], [rAngle, rAngle + Math.PI / 2, rAngle + Math.PI, rAngle + Math.PI / 2 * 3], [1], [6 - i * 0.25]); }
+                }
+                if (tick >= 550 && tick <= 950 && tick % 40 === 0) {
+                    for (let i = 0; i < 16; i++) {
+                        const bx = e.x + Math.cos(i * Math.PI / 8) * 45;
+                        const by = e.y + Math.sin(i * Math.PI / 8) * 45;
+                        enemyShoot(bx, by, [getAngleTowardsPlayer(bx, by)], [2], [8]);
+                    }
+                }
+                if (tick >= 650 && tick <= 1300 && tick % 50 === 0) {
+                    const shiftAngle = ranAngle(-PI2ToX(20), PI2ToX(20));
+                    for (let j = 0; j < 10; j++) {
+                        const fireAngle = angle + PI2ToX(10) * j + shiftAngle;
+                        for (let i = 0; i < 24; i++) { enemyShoot(e.x + Math.cos(i * Math.PI / 12) * 40, e.y + Math.sin(i * Math.PI / 12) * 40, [fireAngle], [6], [6]); }
+                    }
+                }
+                if (tick >= 900 && tick <= 1350 && tick % 50 === 0) {
+                    for (let i = 0; i < 10; i++) { enemyShoot(e.x, e.y, [angle + i * PI2ToX(10)], [7], [4.5]); }
+                }
+                if (tick >= 950 && tick <= 1450 && tick % 70 === 0) {
+                    for (let i = 0; i < 15; i++) { enemyShoot(e.x, e.y, [rAngle, rAngle + Math.PI / 2, rAngle + Math.PI, rAngle + Math.PI / 2 * 3], [1], [5 - i * 0.25]); }
+                }
+                if (tick >= 1400 && tick % 50 < 25) {
+                    enemyShoot(e.x, e.y, [angle + currFrame % 50 * PI2ToX(48), angle - currFrame % 50 * PI2ToX(48)], [2], [2.5]);
                 }
             }
         }
@@ -365,8 +435,8 @@ function update() {
             const len = Math.hypot(b.velX, b.velY) || 1;
             if (b.type === 2) {
                 // Speed Up
-                b.velX = b.velX / len * Math.min(len + 0.06, 5);
-                b.velY = b.velY / len * Math.min(len + 0.06, 5);
+                b.velX = b.velX / len * Math.min(len + 0.06, 5.8);
+                b.velY = b.velY / len * Math.min(len + 0.06, 5.8);
             }
             else if (b.type === 3) {
                 // Slow Down
@@ -385,7 +455,7 @@ function update() {
             else if (b.type === 5 || b.type === 6) {
                 // Turning Bullets
                 b._angle = b._angle ?? Math.atan2(b.velY, b.velX);
-                b._angle += (b.type === 5 ? 0.015 : -0.015);
+                b._angle += (b.type === 5 ? 0.012 : -0.012);
                 b.velX = Math.cos(b._angle) * len;
                 b.velY = Math.sin(b._angle) * len;
             }
@@ -397,7 +467,7 @@ function update() {
                     b.velY = b.velY / len * newLen;
                     if (newLen <= 2) {
                         b._spawned = true;
-                        for (let i = 0; i < 12; i++) { enemyShoot(b.x, b.y, [i * Math.PI / 6], [1], [4.5]); }
+                        for (let i = 0; i < 12; i++) { enemyShoot(b.x, b.y, [i * PI2ToX(12)], [1], [4.5]); }
                         b.lifeTime = 0;
                     }
                 }
@@ -419,18 +489,19 @@ function update() {
     particles = particles.filter(p => p.lifeTime > 0);
 
     // Update Menu Actions
-    if (keyState['enter'] && stage % 2 === 0) {
+    if (keyState['enter'] && stage % 2 === 0 && stage < 6) {
         stage++; playSound('tip'); restartMap();
+        titleShowTime = titleShowTimeMax;
     }
     if (stage > 0 && enemies.length === 0 && stage % 2 === 1) {
-        stage++; playSound('tip');
+        stage++; playSound('tip'); bullets = [];
     }
     if (stage < -1e-9 && keyState['r']) {
         stage = 0; playSound('tip'); restartMap(); continued = false;
     }
     if (stage < -1e-9 && keyState['enter']) {
         stage = Math.abs(stage); playSound('tip'); continued = true;
-        hitPoints = 3; shieldPoints = 3; catPower = catPowerMax;
+        hitPoints = 3; shieldPoints = 3; invTime = 1; catPower = catPowerMax; score = Math.floor(score * 0.5);
     }
 }
 
@@ -538,7 +609,7 @@ function draw() {
         let drawX = playerX - width / 2 - offsetX;
         let drawY = playerY - height - offsetY;
         if (playerCatStatus) { drawY -= Math.sin(Math.PI * (dashTimeMax - dashTime) / dashTimeMax) * 20; }
-        let flip = mouseDownX < playerX;
+        let flip = mouseDownX + offsetX < playerX;
         ctx.save();
         ctx.shadowColor = BRIGHT_BLUE;
         ctx.shadowBlur = 64;
@@ -585,7 +656,7 @@ function draw() {
     ctx.font = `16px ${FONTS}`;
     for (const t of texts) {
         t.lifeTime -= 1 / 60;
-        ctx.fillStyle = t.color || '#fff';
+        ctx.fillStyle = t.color || GREY;
         ctx.fillText(t.text, t.x - offsetX, t.y - offsetY - Math.sin((1 - t.lifeTime) * Math.PI / 2) * 12);
     }
     // Particles
@@ -593,7 +664,7 @@ function draw() {
         p.x += p.velX; p.y += p.velY; p.lifeTime -= 1 / 60;
         if (p.type === 1) {
             ctx.save();
-            ctx.fillStyle = '#fff';
+            ctx.fillStyle = GREY;
             ctx.beginPath();
             ctx.arc(p.x - offsetX, p.y - offsetY, 3, 0, Math.PI * 2);
             ctx.fill();
@@ -604,7 +675,7 @@ function draw() {
             let r = 22;
             let angle = (p.lifeTime || 0) * 4 * Math.PI;
             ctx.rotate(angle);
-            ctx.strokeStyle = p.type === 2 ? '#3ae1f4ff' : 'rgba(255, 92, 92, 1)';
+            ctx.strokeStyle = p.type === 2 ? BRIGHT_BLUE : RED;
             ctx.lineWidth = 2;
             ctx.strokeRect(-r/2, -r/2, r, r);
             ctx.restore();
@@ -624,24 +695,37 @@ function draw() {
         drawText("Be careful! Being hit by bullets will cause shield/hit-points lost.", tipX - offsetX, tipY - 30 - offsetY);
         drawText("When hit-points drop to 0, Rin will fail to escape.", tipX - offsetX, tipY - offsetY);
     }
-    // Progress Bar
-    ctx.save();
-    ctx.fillStyle = BLUE; ctx.strokeStyle = BRIGHT_BLUE; ctx.shadowColor = BRIGHT_BLUE; ctx.shadowBlur = 16;
-    lastProgressDraw = lerp(lastProgressDraw, (playerBlockX + playerBlockY) / (2 * BLOCKS - 2), 0.02);
-    ctx.fillRect(canvas.width / 4, 15, canvas.width / 2 * lastProgressDraw, 10);
-    const blockWidth = canvas.width / (4 * BLOCKS - 4);
-    for (let i = 0; i < BLOCKS - 1; i++) {
-        ctx.beginPath();
-        ctx.moveTo(canvas.width / 2 + i * blockWidth, 10);
-        ctx.lineTo(canvas.width / 2 + i * blockWidth, 30);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(canvas.width / 2 - i * blockWidth, 10);
-        ctx.lineTo(canvas.width / 2 - i * blockWidth, 30);
-        ctx.stroke();
+    // Progress Bar OR Boss Bar
+    if (enemies.length === 1 && enemies[0].type >= 114) {
+        const currRatio = enemies.length ? enemies[0].hp / (enemies[0].maxHp || 1) : 0;
+        lastRatio = lerp(lastRatio, currRatio, 0.05);
+        drawText(['Cauchy\'s Clone v.1.7', 'Cauchy\'s Clone v2.0', 'Cauchy The Cat Witch'][enemies[0].type - 114], canvas.width / 4 - 100, 25, RED, '18px');
+        ctx.save();
+        ctx.globalAlpha = 0.24;
+        ctx.fillStyle = RED;
+        ctx.fillRect(canvas.width / 4, 15, canvas.width / 2 * lastRatio, 10);
+        ctx.restore();
+        drawText(Math.round(lastRatio * 100, 1) + "%", canvas.width / 4 + lastRatio * canvas.width / 2 + 25, 25, RED, '18px');
     }
-    drawText(Math.round(lastProgressDraw * 100, 1) + "%", canvas.width / 4 + lastProgressDraw * canvas.width / 2 + 25, 25, BLUE, '18px');
-    ctx.restore();
+    else {
+        ctx.save();
+        ctx.fillStyle = BLUE; ctx.strokeStyle = BRIGHT_BLUE; ctx.shadowColor = BRIGHT_BLUE; ctx.shadowBlur = 16;
+        lastProgressDraw = lerp(lastProgressDraw, (playerBlockX + playerBlockY) / (2 * BLOCKS - 2), 0.02);
+        ctx.fillRect(canvas.width / 4, 15, canvas.width / 2 * lastProgressDraw, 10);
+        const blockWidth = canvas.width / (4 * BLOCKS - 4);
+        for (let i = 0; i < BLOCKS - 1; i++) {
+            ctx.beginPath();
+            ctx.moveTo(canvas.width / 2 + i * blockWidth, 10);
+            ctx.lineTo(canvas.width / 2 + i * blockWidth, 30);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(canvas.width / 2 - i * blockWidth, 10);
+            ctx.lineTo(canvas.width / 2 - i * blockWidth, 30);
+            ctx.stroke();
+        }
+        drawText(Math.round(lastProgressDraw * 100, 1) + "%", canvas.width / 4 + lastProgressDraw * canvas.width / 2 + 25, 25, BLUE, '18px');
+        ctx.restore();
+    }
     // Moving Hint
     if (playerBlockX + playerBlockY === currLevel) { drawText("Eliminate all Enemies in this room", canvas.width / 2, canvas.height - 60, BLUE); }
     else {
@@ -651,16 +735,13 @@ function draw() {
         }
     }
     drawText("Score: " + String(score).padStart(6, '0'), canvas.width / 2, 45, BLUE);
-    // Boss Bar
-    if (enemies.length === 1 && enemies[0].type === 114) {
-        const currRatio = enemies.length ? enemies[0].hp / (enemies[0].maxHp || 1) : 0;
-        lastRatio = lerp(lastRatio, currRatio, 0.05);
-        drawText('Boss', canvas.width - 30, canvas.height / 4 - 30, RED, '24px');
-        ctx.save();
-        ctx.globalAlpha = 0.24;
-        ctx.fillStyle = RED;
-        ctx.fillRect(canvas.width - 30, canvas.height / 2 - canvas.height / 4 * lastRatio, 10, canvas.height / 2 * lastRatio);
-        ctx.restore();
+    // Title
+    if (titleShowTime > 0) {
+        ctx.globalAlpha = Math.sin(titleShowTime / titleShowTimeMax * Math.PI);
+        drawText("Cauchy\'s Basement", canvas.width / 2, canvas.height / 2 - 40, BRIGHT_BLUE, '62px');
+        drawText("Floor " + (Math.floor(stage / 2) + 1) + "/3", canvas.width / 2 + 60, canvas.height / 2, BRIGHT_BLUE, '42px');
+        titleShowTime -= 1 / 60;
+        ctx.globalAlpha = 1;
     }
     // Draw Blur Mask
     ctx.save();
@@ -676,10 +757,26 @@ function draw() {
         drawText("Rin the Cat Sorceresses", canvas.width / 2, canvas.height / 2, GREY, '62px');
         drawText("Press [Enter] to Start", canvas.width / 2, canvas.height / 2 + 120, GREY, '24px');
     }
-    if (stage >= 2 && stage % 2 === 0) {
+    if (stage >= 2 && stage <= 4 && stage % 2 === 0) {
         bullets = [];
         drawText("Stage " + Math.floor(stage / 2) + "/3 Clear", canvas.width / 2, canvas.height / 2 - 120, GREY, '42px');
         drawText("Press [Enter] to Upstairs", canvas.width / 2, canvas.height / 2 + 120, GREY, '24px');
+    }
+    if (stage === 6) {
+        drawText("Stage All Clear!", canvas.width / 2, canvas.height / 2 - 120, GREY, '42px');
+        drawText("The Cat Sorceresses Rin Finally Defeat the Evil Cat Witch and Escape!", canvas.width / 2, canvas.height / 2 - 80, GREY, '24px');
+        drawText("--- With her Black Cat Power", canvas.width / 2 + 30, canvas.height / 2 - 40, GREY, '24px');
+        if (continued) {
+            drawText("However, Rin accidently let Cauchy escape", canvas.width / 2, canvas.height / 2 + 40, GREY, '24px');
+            drawText("Cauchy, the Evil Cat Witch, is still at large...", canvas.width / 2, canvas.height / 2 + 80, GREY, '24px');
+            drawText("[Try beat the game without continuing!]", canvas.width / 2, canvas.height / 2 + 120, GREY, '24px');
+        }
+        else {
+            drawText("Congratulations!", canvas.width / 2, canvas.height / 2 + 40, GREY, '24px');
+            drawText("Thanks to your skill, Cauchy is sealed away for good.", canvas.width / 2, canvas.height / 2 + 120, GREY, '24px');
+            drawText("You Achieved the True Ending! Thanks for Playing!", canvas.width / 2, canvas.height / 2 + 160, BRIGHT_BLUE, '24px');
+        }
+        drawText("Your Final Score: " + score, canvas.width / 2, canvas.height - 80, continued ? GREY : BRIGHT_BLUE, '32px');
     }
     if (stage < -1e-9) {
         drawText("Game Over", canvas.width / 2, canvas.height / 2, GREY, '62px');
@@ -749,13 +846,12 @@ function lerp(a, b, t) {
     return a + (b - a) * t;
 }
 
-function randomAngle() {
-    return Math.random() * PI2ToX();
+function ranAngle(lower, upper) {
+    return Math.random() * (upper - lower) + lower;
 }
 
-function randomUnitVector() {
-    let angle = randomAngle();
-    return { x: Math.cos(angle), y: Math.sin(angle) };
+function ranInt(lower, upper) {
+    return Math.floor(Math.random() * (upper - lower + 1)) + lower;
 }
 
 // Game Loop
