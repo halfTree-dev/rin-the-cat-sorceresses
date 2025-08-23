@@ -18,7 +18,8 @@ const RED = '#ff5c5c';
 const GREY = '#d3d3d3ff';
 
 const maxShieldPoints = 3;
-const shieldRegen = 1 / 900;
+const shieldRegen = 1 / 250;
+const shieldRecoverMax = 0.5;
 const speed = 4;
 const slowSpeed = 2.5;
 const dashSpeed = 10;
@@ -35,7 +36,7 @@ const tier2Enemies = [4, 5, 6, 7, 9, 11, 18];
 const tier3Enemies = [10, 13, 14, 15, 16, 17, 19, 20];
 const tier1StageSpawns = [[2, 3], [2, 4], [3, 4]];
 const tier2StageSpawns = [[1, 1], [1, 2], [1, 3]];
-const tier3StageSpawns = [[0, 1], [0, 1], [1, 2]];
+const tier3StageSpawns = [[0, 1], [0, 1], [1, 1]];
 
 const imgDict = {};
 ['brick1','brick2','player','cat','enemy', 'bullet1', 'bullet2', 'bulletc', 'life', 'shield'].forEach(name => {
@@ -53,11 +54,16 @@ let stage = 0;
 let currFrame = 0;
 let score = 0;
 let continued = false;
+let practicing = false;
+let highScore = 0;
+let highStage = 0;
+let clearStatus = 0;
 
 let offsetX = 0, offsetY = 0;
 
 let hitPoints = 3;
 let shieldPoints = 3;
+let shieldRecoverCache = 0;
 let invTime = 0;
 
 let playerX = 512, playerY = 512;
@@ -119,7 +125,7 @@ canvas.addEventListener('mouseup', e => {
 
 // Game Logic
 function restartMap() {
-    playerX = 512; playerY = 512; hitPoints = 3; shieldPoints = 3; enemies = []; map = Array.from({length:MAP_SIZE},()=>Array.from({length:MAP_SIZE},()=>"")); catPower = catPowerMax; moveFlags = [];
+    playerX = 512; playerY = 512; bullets = []; enemies = []; map = Array.from({length:MAP_SIZE},()=>Array.from({length:MAP_SIZE},()=>"")); catPower = catPowerMax; moveFlags = [];
     let currRoomX = 0, currRoomY = 0;
     let moveRightFlag = 0;
     while (currRoomX < BLOCKS && currRoomY < BLOCKS) {
@@ -204,6 +210,13 @@ function update() {
             let dx = b.x - playerX, dy = b.y - playerY;
             if(!b.converted && Math.hypot(dx, dy) <= convertRadius){
                 b.converted = true;
+                if (shieldRecoverCache < shieldRecoverMax) {
+                    if ((Math.floor(shieldPoints + shieldRegen) - Math.floor(shieldPoints) > 0) && shieldPoints < 3) {
+                        texts.push({ text: "Shield Recover", x: playerX, y: playerY, lifeTime: 1, color: BLUE }); playSound('tip');
+                    }
+                    shieldRecoverCache += shieldRegen;
+                    shieldPoints += shieldRegen;
+                }
                 playSound('parry');
                 particles.push({type: 2, x: b.x, y: b.y, velX: (Math.random()-0.5)*4, velY: (Math.random()-0.5)*4, lifeTime: 0.5});
                 catPower += catPowerRegenPerBullet;
@@ -215,10 +228,9 @@ function update() {
     else { catPower = Math.min(catPowerRegen + catPower, catPowerMax); }
     invTime = Math.max(invTime - 1 / 60, 0);
 
-    // Shield Recover
-    if (playerBlockX + playerBlockY === currLevel) {
-        shieldPoints = Math.min(shieldPoints + shieldRegen, maxShieldPoints);
-    }
+    // Shield Limit
+    shieldPoints = Math.min(shieldPoints, maxShieldPoints);
+    shieldRecoverCache = Math.max(shieldRecoverCache - 1 / 60, 0);
 
     // Enemy Update
     currLevel = BLOCKS * 2;
@@ -356,11 +368,11 @@ function update() {
                     const shiftAngle = ranAngle(-PI2ToX(20), PI2ToX(20));
                     for (let j = 0; j < 10; j++) {
                         const fireAngle = angle + PI2ToX(10) * j + shiftAngle;
-                        for (let i = 0; i < 24; i++) { enemyShoot(e.x + Math.cos(i * Math.PI / 12) * 40, e.y + Math.sin(i * Math.PI / 12) * 40, [fireAngle], [6], [6]); }
+                        for (let i = 0; i < 24; i++) { enemyShoot(e.x + Math.cos(i * Math.PI / 12) * 40, e.y + Math.sin(i * Math.PI / 12) * 40, [fireAngle], [6], [5]); }
                     }
                 }
                 if (tick >= 900 && tick <= 1350 && tick % 50 === 0) {
-                    for (let i = 0; i < 10; i++) { enemyShoot(e.x, e.y, [angle + i * PI2ToX(10)], [7], [4.5]); }
+                    for (let i = 0; i < 8; i++) { enemyShoot(e.x, e.y, [angle + i * PI2ToX(8)], [7], [4.5]); }
                 }
                 if (tick >= 950 && tick <= 1450 && tick % 70 === 0) {
                     for (let i = 0; i < 15; i++) { enemyShoot(e.x, e.y, [rAngle, rAngle + Math.PI / 2, rAngle + Math.PI, rAngle + Math.PI / 2 * 3], [1], [5 - i * 0.25]); }
@@ -421,7 +433,7 @@ function update() {
                 for (let i = 0; i < 6; i++) {
                     particles.push({type: 3, x: b.x, y: b.y, velX: (Math.random()-0.5)*4, velY: (Math.random()-0.5)*4, lifeTime: 0.5});
                 }
-                invTime = 0.6;
+                invTime = 0.38;
                 if (shieldPoints >= 1) {
                     shieldPoints--;
                     texts.push({text: "Shield Blocked (" + Math.round(shieldPoints, 1) + " Left)", x: b.x, y: b.y - 20, color: 'rgba(209, 106, 106, 1)', lifeTime: 1});
@@ -430,6 +442,7 @@ function update() {
                     if (hitPoints > 1) { texts.push({text: hitPoints + " Lifes Remaining", x: b.x, y: b.y - 20, color: 'rgba(255, 92, 92, 1)', lifeTime: 1}); }
                     else {texts.push({text: "Caution: Last Life!", x: b.x, y: b.y - 20, color: 'rgba(255, 92, 92, 1)', lifeTime: 1});}
                     if (hitPoints <= 0) { stage = -Math.abs(stage); }
+                    shieldPoints = maxShieldPoints;
                 }
             }
             const len = Math.hypot(b.velX, b.velY) || 1;
@@ -489,20 +502,39 @@ function update() {
     particles = particles.filter(p => p.lifeTime > 0);
 
     // Update Menu Actions
-    if (keyState['enter'] && stage % 2 === 0 && stage < 6) {
-        stage++; playSound('tip'); restartMap();
+    if (keyState['enter'] && stage % 2 === 0 && stage < 6 && !practicing) {
+        stage++; playSound('tip'); restartMap(); shieldPoints = 3;
+        if (stage === 1) { hitPoints = 3; }
+        else if (stage === 3) { hitPoints += 1; }
+        else if (stage === 5) { hitPoints += 2; }
         titleShowTime = titleShowTimeMax;
+        saveData();
+    }
+    if (keyState['r'] && stage === 100) {
+        practicing = false; continued = false; stage = 0; restartMap();
+    }
+    if ((keyState['1'] || keyState['2'] || keyState['3']) && stage % 2 === 0 && stage < 6 && !practicing) {
+        practicing = true; playSound('tip'); stage = keyState['1'] ? 1 : keyState['2'] ? 3 : 5; restartMap();
+        hitPoints = 3; shieldPoints = 3;
+        enemies = [enemies[enemies.length - 1]]; playerX = enemies[0].x - 448; playerY = enemies[0].y - 448;
     }
     if (stage > 0 && enemies.length === 0 && stage % 2 === 1) {
-        stage++; playSound('tip'); bullets = [];
+        if (!practicing) { stage++; playSound('tip'); bullets = []; saveData(); }
+        else { practicing = false; stage = 100; }
     }
     if (stage < -1e-9 && keyState['r']) {
-        stage = 0; playSound('tip'); restartMap(); continued = false;
+        saveData();
+        stage = 0; playSound('tip'); restartMap(); continued = false; practicing = false;
     }
     if (stage < -1e-9 && keyState['enter']) {
+        saveData();
         stage = Math.abs(stage); playSound('tip'); continued = true;
         hitPoints = 3; shieldPoints = 3; invTime = 1; catPower = catPowerMax; score = Math.floor(score * 0.5);
     }
+
+    // High Grade
+    highScore = Math.max(highScore, score);
+    highStage = Math.max(highStage, stage);
 }
 
 function getAngleTowardsPlayer(x, y) {
@@ -727,12 +759,12 @@ function draw() {
         ctx.restore();
     }
     // Moving Hint
-    if (playerBlockX + playerBlockY === currLevel) { drawText("Eliminate all Enemies in this room", canvas.width / 2, canvas.height - 60, BLUE); }
+    if (!practicing) {
+        if (playerBlockX + playerBlockY === currLevel) { drawText("Eliminate all Enemies in this room", canvas.width / 2, canvas.height - 60, BLUE); }
+        else { drawText("Reach the next room to escape", canvas.width / 2, canvas.height - 60, BLUE); }
+    }
     else {
-        drawText("Reach the next room to escape", canvas.width / 2, canvas.height - 60, BLUE);
-        if (shieldPoints < maxShieldPoints - 1e-9) {
-            drawText("Your shield only regenerates during combat", canvas.width / 2, canvas.height - 80, BLUE);
-        }
+        drawText("Practice Mode", canvas.width / 2, canvas.height - 60, BLUE);
     }
     drawText("Score: " + String(score).padStart(6, '0'), canvas.width / 2, 45, BLUE);
     // Title
@@ -756,6 +788,10 @@ function draw() {
     if (stage === 0) {
         drawText("Rin the Cat Sorceresses", canvas.width / 2, canvas.height / 2, GREY, '62px');
         drawText("Press [Enter] to Start", canvas.width / 2, canvas.height / 2 + 120, GREY, '24px');
+        drawText("Press [1][2][3] to Parctice Boss fights", canvas.width / 2, canvas.height / 2 + 150, GREY, '24px');
+        drawText("High-Score: " + highScore, canvas.width / 2, canvas.height - 80, GREY, '24px');
+        if (clearStatus === 2) { drawText("True Ending Achieved!", canvas.width / 2, canvas.height - 50, BRIGHT_BLUE, '24px'); }
+        else if (clearStatus === 1) { drawText("Normal Ending Achieved!", canvas.width / 2, canvas.height - 50, GREY, '24px'); }
     }
     if (stage >= 2 && stage <= 4 && stage % 2 === 0) {
         bullets = [];
@@ -763,6 +799,7 @@ function draw() {
         drawText("Press [Enter] to Upstairs", canvas.width / 2, canvas.height / 2 + 120, GREY, '24px');
     }
     if (stage === 6) {
+        bullets = [];
         drawText("Stage All Clear!", canvas.width / 2, canvas.height / 2 - 120, GREY, '42px');
         drawText("The Cat Sorceresses Rin Finally Defeat the Evil Cat Witch and Escape!", canvas.width / 2, canvas.height / 2 - 80, GREY, '24px');
         drawText("--- With her Black Cat Power", canvas.width / 2 + 30, canvas.height / 2 - 40, GREY, '24px');
@@ -770,13 +807,20 @@ function draw() {
             drawText("However, Rin accidently let Cauchy escape", canvas.width / 2, canvas.height / 2 + 40, GREY, '24px');
             drawText("Cauchy, the Evil Cat Witch, is still at large...", canvas.width / 2, canvas.height / 2 + 80, GREY, '24px');
             drawText("[Try beat the game without continuing!]", canvas.width / 2, canvas.height / 2 + 120, GREY, '24px');
+            if (clearStatus < 1) { clearStatus = 1; saveData(); }
         }
         else {
             drawText("Congratulations!", canvas.width / 2, canvas.height / 2 + 40, GREY, '24px');
             drawText("Thanks to your skill, Cauchy is sealed away for good.", canvas.width / 2, canvas.height / 2 + 120, GREY, '24px');
             drawText("You Achieved the True Ending! Thanks for Playing!", canvas.width / 2, canvas.height / 2 + 160, BRIGHT_BLUE, '24px');
+            if (clearStatus < 2) { clearStatus = 2; saveData(); }
         }
         drawText("Your Final Score: " + score, canvas.width / 2, canvas.height - 80, continued ? GREY : BRIGHT_BLUE, '32px');
+    }
+    if (stage === 100) {
+        bullets = [];
+        drawText("Practice Mode Finished!", canvas.width / 2, canvas.height / 2, GREY, '62px');
+        drawText("Press [R] to Return to Menu", canvas.width / 2, canvas.height / 2 + 120, GREY, '24px');
     }
     if (stage < -1e-9) {
         drawText("Game Over", canvas.width / 2, canvas.height / 2, GREY, '62px');
@@ -854,7 +898,26 @@ function ranInt(lower, upper) {
     return Math.floor(Math.random() * (upper - lower + 1)) + lower;
 }
 
+function getData() {
+    try {
+        highScore = parseInt(localStorage.getItem('highScore')) || 0;
+        highStage = parseInt(localStorage.getItem('highStage')) || 0;
+        clearStatus = parseInt(localStorage.getItem('clearStatus')) || 0;
+    }
+    catch (e) {}
+}
+
+function saveData() {
+    try {
+        localStorage.setItem('highScore', highScore);
+        localStorage.setItem('highStage', highStage);
+        localStorage.setItem('clearStatus', clearStatus);
+    }
+    catch (e) {}
+}
+
 // Game Loop
+getData();
 function loop() {
     update(); draw();
 }
