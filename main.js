@@ -116,6 +116,7 @@ canvas.addEventListener('mousedown', e => {
         dashY = dy / len * dashSpeed;
         catPower -= dashPowerCost;
         texts.push({ text: "Meow!", x: playerX, y: playerY, lifeTime: 1, color: BRIGHT_BLUE });
+        invTime = 0;
     }
 });
 canvas.addEventListener('mouseup', e => {
@@ -206,22 +207,29 @@ function update() {
     // Cat Status Action
     playerCatStatus = dashTime > 0;
     if ((playerCatStatus || invTime > 0) && hitPoints > 0) {
-        for(const b of bullets){
+        for (const b of bullets) {
             let dx = b.x - playerX, dy = b.y - playerY;
-            if(!b.converted && Math.hypot(dx, dy) <= convertRadius){
-                b.converted = true;
-                if (shieldRecoverCache < shieldRecoverMax) {
-                    if ((Math.floor(shieldPoints + shieldRegen) - Math.floor(shieldPoints) > 0) && shieldPoints < 3) {
-                        texts.push({ text: "Shield Recover", x: playerX, y: playerY, lifeTime: 1, color: BLUE }); playSound('tip');
-                    }
-                    shieldRecoverCache += shieldRegen;
-                    shieldPoints += shieldRegen;
+            if (!b.converted && Math.hypot(dx, dy) <= convertRadius){
+                if (invTime > 0) {
+                    b.lifeTime = 0;
+                    particles.push({type: 4, x: b.x, y: b.y, velX: (Math.random()-0.5)*4, velY: (Math.random()-0.5)*4, lifeTime: 0.5});
+                    playSound('parry');
                 }
-                playSound('parry');
-                particles.push({type: 2, x: b.x, y: b.y, velX: (Math.random()-0.5)*4, velY: (Math.random()-0.5)*4, lifeTime: 0.5});
-                catPower += catPowerRegenPerBullet;
-                b.lifeTime = 5;
-                score += 15;
+                else {
+                    b.converted = true;
+                    if (shieldRecoverCache < shieldRecoverMax) {
+                        if ((Math.floor(shieldPoints + shieldRegen) - Math.floor(shieldPoints) > 0) && shieldPoints < 3) {
+                            texts.push({ text: "Shield Recover", x: playerX, y: playerY, lifeTime: 1, color: BLUE }); playSound('tip');
+                        }
+                        shieldRecoverCache += shieldRegen;
+                        shieldPoints += shieldRegen;
+                    }
+                    playSound('parry');
+                    particles.push({type: 2, x: b.x, y: b.y, velX: (Math.random()-0.5)*4, velY: (Math.random()-0.5)*4, lifeTime: 0.5});
+                    catPower += catPowerRegenPerBullet;
+                    b.lifeTime = 5;
+                    score += 15;
+                }
             }
         }
     }
@@ -433,7 +441,7 @@ function update() {
                 for (let i = 0; i < 6; i++) {
                     particles.push({type: 3, x: b.x, y: b.y, velX: (Math.random()-0.5)*4, velY: (Math.random()-0.5)*4, lifeTime: 0.5});
                 }
-                invTime = 0.38;
+                invTime = 0.65;
                 if (shieldPoints >= 1) {
                     shieldPoints--;
                     texts.push({text: "Shield Blocked (" + Math.round(shieldPoints, 1) + " Left)", x: b.x, y: b.y - 20, color: 'rgba(209, 106, 106, 1)', lifeTime: 1});
@@ -504,7 +512,7 @@ function update() {
     // Update Menu Actions
     if (keyState['enter'] && stage % 2 === 0 && stage < 6 && !practicing) {
         stage++; playSound('tip'); restartMap(); shieldPoints = 3;
-        if (stage === 1) { hitPoints = 3; }
+        if (stage === 1) { hitPoints = 3; score = 0; }
         else if (stage === 3) { hitPoints += 1; }
         else if (stage === 5) { hitPoints += 2; }
         titleShowTime = titleShowTimeMax;
@@ -524,7 +532,7 @@ function update() {
     }
     if (stage < -1e-9 && keyState['r']) {
         saveData();
-        stage = 0; playSound('tip'); restartMap(); continued = false; practicing = false;
+        stage = 0; playSound('tip'); restartMap(); continued = false; practicing = false; score = 0;
     }
     if (stage < -1e-9 && keyState['enter']) {
         saveData();
@@ -701,13 +709,13 @@ function draw() {
             ctx.arc(p.x - offsetX, p.y - offsetY, 3, 0, Math.PI * 2);
             ctx.fill();
             ctx.restore();
-        } else if (p.type === 2 || p.type === 3) {
+        } else if (p.type === 2 || p.type === 3 || p.type === 4) {
             ctx.save();
             ctx.translate(p.x - offsetX, p.y - offsetY);
             let r = 22;
             let angle = (p.lifeTime || 0) * 4 * Math.PI;
             ctx.rotate(angle);
-            ctx.strokeStyle = p.type === 2 ? BRIGHT_BLUE : RED;
+            ctx.strokeStyle = p.type === 2 ? BRIGHT_BLUE : p.type === 3 ? RED : GREY;
             ctx.lineWidth = 2;
             ctx.strokeRect(-r/2, -r/2, r, r);
             ctx.restore();
