@@ -26,16 +26,19 @@ const dashSpeed = 10;
 const dashTimeMax = 0.25;
 const dashPowerCost = 100;
 const catPowerMax = 300;
-const convertRadius = 100;
 const catPowerRegen = 100 / 126;
 const catPowerRegenPerBullet = 0;
 const titleShowTimeMax = 3;
 
-const tier1Enemies = [1, 2, 3, 8, 12]
-const tier2Enemies = [4, 5, 6, 7, 9, 11, 18];
-const tier3Enemies = [10, 13, 14, 15, 16, 17, 19, 20];
+const convertRadius = 100;
+const upgradeScore = 100000;
+const upgradeRadius = 8;
+
+const tier1Enemies = [1, 2, 3, 8, 12, 21, 22, 25]
+const tier2Enemies = [4, 5, 6, 7, 9, 11, 18, 23, 24];
+const tier3Enemies = [10, 13, 14, 15, 16, 17, 19, 20, 26];
 const tier1StageSpawns = [[2, 3], [2, 4], [3, 4]];
-const tier2StageSpawns = [[1, 1], [1, 2], [1, 3]];
+const tier2StageSpawns = [[1, 1], [1, 2], [1, 2]];
 const tier3StageSpawns = [[0, 1], [0, 1], [1, 1]];
 
 const imgDict = {};
@@ -56,7 +59,7 @@ let score = 0;
 let continued = false;
 let practicing = false;
 let highScore = 0;
-let highStage = 0;
+let unlockProgress = 0;
 let clearStatus = 0;
 
 let offsetX = 0, offsetY = 0;
@@ -94,7 +97,13 @@ let mouseRightDown = false;
 let mouseDownX = 0, mouseDownY = 0;
 let keyState = {};
 
-document.addEventListener('keydown', e => { keyState[e.key.toLowerCase()] = true; });
+document.addEventListener('keydown', e => {
+    keyState[e.key.toLowerCase()] = true;
+    if (e.key === ' ') {
+        doCatDash((keyState['a']) ? -1 : 0 + (keyState['d']) ? 1 : 0,
+            (keyState['w']) ? -1 : 0 + (keyState['s']) ? 1 : 0);
+    }
+});
 document.addEventListener('keyup',   e => { keyState[e.key.toLowerCase()] = false; });
 
 canvas.addEventListener('contextmenu', e => e.preventDefault());
@@ -110,13 +119,7 @@ canvas.addEventListener('mousedown', e => {
         mouseRightDown = true;
         mouseDownX = e.offsetX;
         mouseDownY = e.offsetY;
-        dashTime = dashTimeMax;
-        let dx = mouseDownX + offsetX - playerX, dy = mouseDownY + offsetY - playerY, len = Math.hypot(dx, dy) || 1;
-        dashX = dx / len * dashSpeed;
-        dashY = dy / len * dashSpeed;
-        catPower -= dashPowerCost;
-        texts.push({ text: "Meow!", x: playerX, y: playerY, lifeTime: 1, color: BRIGHT_BLUE });
-        invTime = 0;
+        doCatDash(mouseDownX + offsetX - playerX, mouseDownY + offsetY - playerY);
     }
 });
 canvas.addEventListener('mouseup', e => {
@@ -209,7 +212,7 @@ function update() {
     if ((playerCatStatus || invTime > 0) && hitPoints > 0) {
         for (const b of bullets) {
             let dx = b.x - playerX, dy = b.y - playerY;
-            if (!b.converted && Math.hypot(dx, dy) <= convertRadius){
+            if (!b.converted && Math.hypot(dx, dy) <= getRadius()){
                 if (invTime > 0) {
                     b.lifeTime = 0;
                     particles.push({type: 4, x: b.x, y: b.y, velX: (Math.random()-0.5)*4, velY: (Math.random()-0.5)*4, lifeTime: 0.5});
@@ -279,16 +282,16 @@ function update() {
                 // suround bullet
                 for (let i = 0; i < 16; i++) { enemyShoot(e.x + Math.cos(i * Math.PI / 8) * 45, e.y + Math.sin(i * Math.PI / 8) * 45, [angle], [1], [3]); }
             }
-            else if (e.type === 15 && currFrame % 90 <= 45 && currFrame % 3 === 0) {
+            else if (e.type === 15 && currFrame % 90 <= 45 && currFrame % 6 === 0) {
                 // random spread
                 const angle = Math.random() * 2 * Math.PI;
                 enemyShoot(e.x, e.y, [angle, angle, angle], [2, 2, 2], [2.5, 3.5, 4.5]);
             }
-            else if (e.type === 16 && currFrame % 100 <= 60 && currFrame % 2 === 0) {
+            else if (e.type === 16 && currFrame % 100 <= 60 && currFrame % 3 === 0) {
                 // machine gun
                 enemyShoot(e.x, e.y, [angle + ranAngle(-PI2ToX(24), PI2ToX(24))], [2], [2 + Math.random() * 2.5]);
             }
-            else if (e.type === 17 && currFrame % 100 <= 60 && currFrame % 15 === 0) {
+            else if (e.type === 17 && currFrame % 100 <= 60 && currFrame % 20 === 0) {
                 // quick shot gun
                 for (let i = 0; i < 8; i++) { enemyShoot(e.x, e.y, [angle + ranAngle(-PI2ToX(10), PI2ToX(10))], [2], [3 + Math.random() * 1.5]); }
             }
@@ -300,6 +303,27 @@ function update() {
                 // shotgun with boom
                 const angles = (e.type === 20 ? [angle-PI2ToX(12), angle+PI2ToX(12)] : [angle, angle-PI2ToX(24), angle+PI2ToX(24)]);
                 enemyShoot(e.x, e.y, angles, [7], [4]);
+            }
+            else if (e.type === 21 && currFrame % 60 === 0) {
+                // line shot besides
+                for (let i = 0; i < 15; i++) { enemyShoot(e.x - Math.sin(angle) * 25, e.y + Math.cos(angle) * 25, [angle], [1], [5 - i * 0.25]);
+                    enemyShoot(e.x + Math.sin(angle) * 25, e.y - Math.cos(angle) * 25, [angle], [1], [5 - i * 0.25]); }
+            }
+            else if (e.type === 22 && currFrame % 75 === 0) {
+                // arc shoot
+                for (let j = 4; j >= 1; j--) { for (let i = -j; i <= j; i++) { enemyShoot(e.x, e.y, [angle + i / j * PI2ToX(18)], [2], [2 + j * 0.8]); } }
+            }
+            else if ((e.type === 23 || e.type === 24) && currFrame % 110 <= 40) {
+                // turning shoot
+                enemyShoot(e.x, e.y, [angle + (currFrame % 90) * PI2ToX(20)], [e.type === 23 ? 2 : 5], [4.5]);
+            }
+            else if (e.type === 25 && currFrame % 70 % 6 === 0 && currFrame % 70 < 30) {
+                // homing snipe
+                enemyShoot(e.x, e.y, [angle], [8]);
+            }
+            else if (e.type === 26 && currFrame % 120 === 0) {
+                // homing shot gun
+                for (let i = 0; i < 7; i++) { enemyShoot(e.x, e.y, [angle + ranAngle(-PI2ToX(4), PI2ToX(4))], [8], [3 + Math.random() * 1.5]); }
             }
             else if (e.type === 114) {
                 if (tick < 400) {
@@ -493,6 +517,15 @@ function update() {
                     }
                 }
             }
+            else if (b.type === 8) {
+                // Homing Bullets
+                let targetAngle = getAngleTowardsPlayer(b.x, b.y);
+                b.velX += Math.cos(targetAngle) * 0.12;
+                b.velY += Math.sin(targetAngle) * 0.12;
+                let vlen = Math.hypot(b.velX, b.velY) || 1;
+                b.velX = b.velX / vlen * Math.min(vlen + 0.1, 5.8);
+                b.velY = b.velY / vlen * Math.min(vlen + 0.1, 5.8);
+            }
         }
         // Bullets Move
         b.x += b.velX;
@@ -521,14 +554,15 @@ function update() {
     if (keyState['r'] && stage === 100) {
         practicing = false; continued = false; stage = 0; restartMap();
     }
-    if ((keyState['1'] || keyState['2'] || keyState['3']) && stage % 2 === 0 && stage < 6 && !practicing) {
+    if ((keyState['1'] || keyState['2'] || keyState['3']) && stage === 0 && !practicing) {
+        if ((keyState['3'] && unlockProgress < 3) || (keyState['1'] && unlockProgress < 1) || (keyState['2'] && unlockProgress < 2)) { return; }
         practicing = true; playSound('tip'); stage = keyState['1'] ? 1 : keyState['2'] ? 3 : 5; restartMap();
         hitPoints = 3; shieldPoints = 3;
         enemies = [enemies[enemies.length - 1]]; playerX = enemies[0].x - 448; playerY = enemies[0].y - 448;
     }
     if (stage > 0 && enemies.length === 0 && stage % 2 === 1) {
         if (!practicing) { stage++; playSound('tip'); bullets = []; saveData(); }
-        else { practicing = false; stage = 100; }
+        else { stage = 100; }
     }
     if (stage < -1e-9 && keyState['r']) {
         saveData();
@@ -541,8 +575,10 @@ function update() {
     }
 
     // High Grade
-    highScore = Math.max(highScore, score);
-    highStage = Math.max(highStage, stage);
+    if (!practicing) {
+        highScore = Math.max(highScore, score);
+        unlockProgress = Math.max(unlockProgress, Math.floor(stage / 2));
+    }
 }
 
 function getAngleTowardsPlayer(x, y) {
@@ -572,6 +608,21 @@ function enemyShoot(x, y, angles = [0], types = [1], speeds = [6], lifeTimes = [
         };
         bullets.push(bullet);
     }
+}
+
+function doCatDash(dx, dy) {
+    if (dx === 0 && dy === 0) { return; }
+    dashTime = dashTimeMax;
+    let len = Math.hypot(dx, dy) || 1;
+    dashX = dx / len * dashSpeed;
+    dashY = dy / len * dashSpeed;
+    catPower -= dashPowerCost;
+    texts.push({ text: "Meow!", x: playerX, y: playerY, lifeTime: 1, color: BRIGHT_BLUE });
+    invTime = 0;
+}
+
+function getRadius() {
+    return convertRadius + Math.floor(score / upgradeScore) * upgradeRadius;
 }
 
 // Display
@@ -606,7 +657,7 @@ function draw() {
         ctx.fillStyle = BRIGHT_BLUE;
         ctx.globalAlpha = 0.18;
         ctx.beginPath();
-        ctx.arc(playerX - offsetX, playerY - offsetY, convertRadius, 0, Math.PI * 2);
+        ctx.arc(playerX - offsetX, playerY - offsetY, getRadius(), 0, Math.PI * 2);
         if (playerCatStatus || invTime > 0) {
             ctx.fill();
         } else {
@@ -675,10 +726,19 @@ function draw() {
     }
     // Enemy
     for (const e of enemies) {
+        let flip = e.x >= playerX;
+        let drawX = e.x - PLAYER_WIDTH / 2 - offsetX;
+        let drawY = e.y - PLAYER_HEIGHT - offsetY;
         ctx.save();
         ctx.shadowColor = RED;
         ctx.shadowBlur = 64;
-        ctx.drawImage(imgDict['enemy'], e.x - PLAYER_WIDTH/2 - offsetX, e.y - PLAYER_HEIGHT - offsetY, PLAYER_WIDTH, PLAYER_HEIGHT);
+        if (flip) {
+            ctx.translate(drawX + PLAYER_WIDTH / 2, 0);
+            ctx.scale(-1, 1);
+            ctx.drawImage(imgDict['enemy'], -PLAYER_WIDTH / 2, drawY, PLAYER_WIDTH, PLAYER_HEIGHT);
+        } else {
+            ctx.drawImage(imgDict['enemy'], drawX, drawY, PLAYER_WIDTH, PLAYER_HEIGHT);
+        }
         ctx.restore();
     }
     // Bullet
@@ -724,22 +784,27 @@ function draw() {
     // Map Hint
     if (stage === 1) {
         drawText("Use [W][A][S][D] to Move", 512 - offsetX, 392 - offsetY);
-        drawText("Mouse Right Click to turn into a Black Cat and dash", 512 - offsetX, 422 - offsetY);
-        let tipX = 512 + (moveFlags[0] ? 1024 : 0);
-        let tipY = 512 + (moveFlags[0] ? 0 : 1024);
+        drawText("[Mouse Right Click] Or [Space] to turn into a Black Cat and dash", 512 - offsetX, 422 - offsetY);
+        let tipX = 512 + (moveFlags[0] ? 1024 : 0); let tipY = 512 + (moveFlags[0] ? 0 : 1024);
         drawText("When transformed into a cat, a field of doom forms around you", tipX - offsetX, tipY - 120 - offsetY);
         drawText("Enemy bullets affected by doom will turn to attack themselves", tipX - offsetX, tipY - 90 - offsetY);
         drawText("Try defeat the guard here", tipX - offsetX, tipY - 60 - offsetY);
-        tipX += moveFlags[1] ? 675 : 0;
-        tipY += moveFlags[1] ? 0 : 675;
-        drawText("Be careful! Being hit by bullets will cause shield/hit-points lost.", tipX - offsetX, tipY - 30 - offsetY);
+        tipX += moveFlags[1] ? 1024 : 0; tipY += moveFlags[1] ? 0 : 1024;
+        drawText("Be careful! You will lose shield/hit-points when being hit.", tipX - offsetX, tipY - 30 - offsetY);
         drawText("When hit-points drop to 0, Rin will fail to escape.", tipX - offsetX, tipY - offsetY);
+        tipX += moveFlags[2] ? 1024 : 0; tipY += moveFlags[2] ? 0 : 1024;
+        drawText("Lost shield points can be recovered by converting bullets.", tipX - offsetX, tipY - 30 - offsetY);
+        drawText("If your shield is insufficient to block a bullet, you will lose life.", tipX - offsetX, tipY - offsetY);
+    }
+    if (stage === 3) {
+        drawText("Each 100000 points will make convert range larger.", 512 - offsetX, 392 - offsetY);
+        drawText("When you die and choose to continue, you will lose score.", 512 - offsetX, 422 - offsetY);
     }
     // Progress Bar OR Boss Bar
     if (enemies.length === 1 && enemies[0].type >= 114) {
         const currRatio = enemies.length ? enemies[0].hp / (enemies[0].maxHp || 1) : 0;
         lastRatio = lerp(lastRatio, currRatio, 0.05);
-        drawText(['Cauchy\'s Clone v.1.7', 'Cauchy\'s Clone v2.0', 'Cauchy The Cat Witch'][enemies[0].type - 114], canvas.width / 4 - 100, 25, RED, '18px');
+        drawText(['Cauchy\'s Clone v.1.17', 'Cauchy\'s Clone v2.0', 'Cauchy The Cat Witch'][enemies[0].type - 114], canvas.width / 4 - 100, 25, RED, '18px');
         ctx.save();
         ctx.globalAlpha = 0.24;
         ctx.fillStyle = RED;
@@ -768,7 +833,7 @@ function draw() {
     }
     // Moving Hint
     if (!practicing) {
-        if (playerBlockX + playerBlockY === currLevel) { drawText("Eliminate all Enemies in this room", canvas.width / 2, canvas.height - 60, BLUE); }
+        if (playerBlockX + playerBlockY === currLevel) { drawText("Eliminate Enemies in this room", canvas.width / 2, canvas.height - 60, BLUE); }
         else { drawText("Reach the next room to escape", canvas.width / 2, canvas.height - 60, BLUE); }
     }
     else {
@@ -796,7 +861,12 @@ function draw() {
     if (stage === 0) {
         drawText("Rin the Cat Sorceresses", canvas.width / 2, canvas.height / 2, GREY, '62px');
         drawText("Press [Enter] to Start", canvas.width / 2, canvas.height / 2 + 120, GREY, '24px');
-        drawText("Press [1][2][3] to Parctice Boss fights", canvas.width / 2, canvas.height / 2 + 150, GREY, '24px');
+        let practiceStr = "Defeat Bosses (Accept Continuing) to Unlock Practice Mode";
+        if (unlockProgress > 0) {
+            practiceStr = "Press "; for (let i = 1; i <= Math.min(unlockProgress, 3); i++) { practiceStr += "[" + i + "] "; }
+            practiceStr += " to Practice Boss fights";
+        }
+        drawText(practiceStr, canvas.width / 2, canvas.height / 2 + 150, GREY, '24px');
         drawText("High-Score: " + highScore, canvas.width / 2, canvas.height - 80, GREY, '24px');
         if (clearStatus === 2) { drawText("True Ending Achieved!", canvas.width / 2, canvas.height - 50, BRIGHT_BLUE, '24px'); }
         else if (clearStatus === 1) { drawText("Normal Ending Achieved!", canvas.width / 2, canvas.height - 50, GREY, '24px'); }
@@ -909,16 +979,20 @@ function ranInt(lower, upper) {
 function getData() {
     try {
         highScore = parseInt(localStorage.getItem('highScore')) || 0;
-        highStage = parseInt(localStorage.getItem('highStage')) || 0;
+        unlockProgress = parseInt(localStorage.getItem('unlockProgress')) || 0;
         clearStatus = parseInt(localStorage.getItem('clearStatus')) || 0;
     }
     catch (e) {}
 }
 
 function saveData() {
+    if (!practicing) {
+        highScore = Math.max(highScore, score);
+        unlockProgress = Math.max(unlockProgress, Math.floor(stage / 2));
+    }
     try {
         localStorage.setItem('highScore', highScore);
-        localStorage.setItem('highStage', highStage);
+        localStorage.setItem('unlockProgress', unlockProgress);
         localStorage.setItem('clearStatus', clearStatus);
     }
     catch (e) {}
