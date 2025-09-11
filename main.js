@@ -99,7 +99,7 @@ let keyState = {};
 
 document.addEventListener('keydown', e => {
     keyState[e.key.toLowerCase()] = true;
-    if (e.key === ' ') {
+    if (e.key === ' ' && dashTime <= 0 && catPower >= dashPowerCost) {
         doCatDash((keyState['a']) ? -1 : 0 + (keyState['d']) ? 1 : 0,
             (keyState['w']) ? -1 : 0 + (keyState['s']) ? 1 : 0);
     }
@@ -794,11 +794,11 @@ function draw() {
         drawText("When hit-points drop to 0, Rin will fail to escape.", tipX - offsetX, tipY - offsetY);
         tipX += moveFlags[2] ? 1024 : 0; tipY += moveFlags[2] ? 0 : 1024;
         drawText("Lost shield points can be recovered by converting bullets.", tipX - offsetX, tipY - 30 - offsetY);
-        drawText("If your shield is insufficient to block a bullet, you will lose life.", tipX - offsetX, tipY - offsetY);
+        drawText("When shield is insufficient to block a bullet, hit-points lost.", tipX - offsetX, tipY - offsetY);
     }
     if (stage === 3) {
         drawText("Each 100000 points will make convert range larger.", 512 - offsetX, 392 - offsetY);
-        drawText("When you die and choose to continue, you will lose score.", 512 - offsetX, 422 - offsetY);
+        drawText("When you die and continue, you will lose score.", 512 - offsetX, 422 - offsetY);
     }
     // Progress Bar OR Boss Bar
     if (enemies.length === 1 && enemies[0].type >= 114) {
